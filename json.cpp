@@ -283,8 +283,14 @@ struct JSON_Value
                 }
                 case ':': {
                     assert(token_type == JSON_Type::STRING);
+                    assert(token_size > 0);
+
                     key = token_buff.str();
                     // std::cout << "key: " << key << '\t' << (int)token_type << std::endl;
+                    token_buff = std::stringstream{};
+                    token_size = 0;
+                    token_type = JSON_Type::NIL;
+                    continue;
                 }
                 case '}':
                 case ']':
@@ -312,7 +318,7 @@ struct JSON_Value
                                 value = token;
                                 break;
                             default:
-                                 value = std::monostate{};
+                                value = std::monostate{};
                         };
 
                         switch (stack.top()->type())
@@ -392,7 +398,7 @@ int main()
     std::cout << json["nested"]["name"].string() << std::endl;
     std::cout << json["arr"][1].string() << std::endl;
     
-    JSON_Value parsed = JSON_Value::parse("[134234,\"sdfsdf\",true,false,null,[1,true,{\"id\":\"XY23\",\"arr\":[2,3]}]]");
+    JSON_Value parsed = JSON_Value::parse("[134234,\"sdfsdf\",true,false,null,[1,true,{\"id\":\"XY23\",\"arr\":[2,3],\"obj\":{\"key\":1}}]]");
     std::cout << "parsed: " << parsed.to_string() << std::endl;
 
     return 0;
