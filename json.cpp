@@ -5,6 +5,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <stack>
 #include <vector>
 #include <map>
 #include <format>
@@ -29,7 +30,8 @@ struct JSON_Value
 {
     JSON_Variant value;
     
-    constexpr JSON_Type type() const {
+    constexpr JSON_Type type() const
+    {
         return static_cast<JSON_Type>(value.index());
     }
     
@@ -51,27 +53,33 @@ struct JSON_Value
         return std::get<std::string>(value);
     }
     
-    JSON_Array array() const
+    const JSON_Array& array() const
     {
         assert(type() == JSON_Type::ARRAY);
         return std::get<JSON_Array>(value);
     }
     
-    JSON_Object object() const
+    const JSON_Object& object() const
     {
         assert(type() == JSON_Type::OBJECT);
         return std::get<JSON_Object>(value);
     }
     
-    bool is_null() const {
-        return type() == JSON_Type::NIL;
+    JSON_Array& array()
+    {
+        assert(type() == JSON_Type::ARRAY);
+        return std::get<JSON_Array>(value);
     }
     
-    size_t size() const {
-        if (type() == JSON_Type::ARRAY) return array().size();
-        if (type() == JSON_Type::OBJECT) return object().size();
-        if (type() == JSON_Type::STRING) return string().size();
-        return 0;
+    JSON_Object& object()
+    {
+        assert(type() == JSON_Type::OBJECT);
+        return std::get<JSON_Object>(value);
+    }
+    
+    bool is_null() const
+    {
+        return type() == JSON_Type::NIL;
     }
     
     JSON_Value() : value(std::monostate{}) {}
@@ -84,39 +92,43 @@ struct JSON_Value
     JSON_Value(const char *cstr) : value(std::string(cstr)) {}
     JSON_Value(const std::string& str) : value(str) {}
     
-    JSON_Value& operator[](const std::string& key) {
+    JSON_Value& operator[](const std::string& key)
+    {
         assert(type() == JSON_Type::OBJECT);
         return std::get<JSON_Object>(value)[key];
     }
 
-    const JSON_Value& operator[](const std::string& key) const {
+    const JSON_Value& operator[](const std::string& key) const
+    {
         assert(type() == JSON_Type::OBJECT);
         return std::get<JSON_Object>(value).at(key);
     }
     
-    JSON_Value& operator[](int index) {
+    JSON_Value& operator[](int index)
+    {
         assert(type() == JSON_Type::ARRAY);
         return std::get<JSON_Array>(value)[index];
     }
 
-    const JSON_Value& operator[](int index) const {
+    const JSON_Value& operator[](int index) const
+    {
         assert(type() == JSON_Type::ARRAY);
         return std::get<JSON_Array>(value).at(index);
     }
     
-    JSON_Value& operator =(const std::monostate& nil)
+    JSON_Value& operator=(const std::monostate& nil)
     {
         value = nil;
         return *this;
     }
     
-    JSON_Value& operator =(bool boolean)
+    JSON_Value& operator=(bool boolean)
     {
         value = boolean;
         return *this;
     }
     
-    JSON_Value& operator =(double number)
+    JSON_Value& operator=(double number)
     {
         value = number;
         return *this;
@@ -127,25 +139,25 @@ struct JSON_Value
         return *this;
     }
     
-    JSON_Value& operator =(const JSON_Array &array)
+    JSON_Value& operator=(const JSON_Array &array)
     {
         value = array;
         return *this;
     }
     
-    JSON_Value& operator =(const JSON_Object &object)
+    JSON_Value& operator=(const JSON_Object &object)
     {
         value = object;
         return *this;
     }
     
-    JSON_Value& operator =(const std::string& str)
+    JSON_Value& operator=(const std::string& str)
     {
         value = str;
         return *this;
     }
     
-    JSON_Value& operator =(const char *cstr)
+    JSON_Value& operator=(const char *cstr)
     {
         value = std::string(cstr);
         return *this;
@@ -169,7 +181,8 @@ struct JSON_Value
                     ss << v.to_string() << ",";
                 }
                 std::string buffer = ss.str();
-                if (buffer.size() > 1) {
+                if (buffer.size() > 1)
+                {
                     buffer.pop_back();
                 }
                 return buffer + "]";
@@ -182,7 +195,8 @@ struct JSON_Value
                     ss << std::quoted(k) << ":" << v.to_string() << ",";
                 }
                 std::string buffer = ss.str();
-                if (buffer.size() > 1) {
+                if (buffer.size() > 1)
+                {
                     buffer.pop_back();
                 }
                 return buffer + "}";
@@ -192,7 +206,7 @@ struct JSON_Value
         };
     }
     
-    std::string type_to_string() const
+    std::string type_name() const
     {
         switch (type())
         {
@@ -209,6 +223,152 @@ struct JSON_Value
             default:
                 return "null";
         };
+    }
+    
+    static JSON_Value parse(std::istringstream isstream)
+    {
+        JSON_Value root;
+        std::stack<JSON_Value*> stack;
+        stack.push(&root);
+        
+        std::string key;
+        JSON_Type token_type = JSON_Type::NIL;
+        size_t token_size = 0;
+        std::stringstream token_buff;
+
+        char c;
+        while (isstream.read(&c, 1))
+        {
+            switch (c)
+            {
+                case '{': {
+                    switch (stack.top()->type())
+                    {
+                        case JSON_Type::ARRAY: {
+                            JSON_Value& value = stack.top()->array().emplace_back(JSON_Object{});
+                            stack.push(&value);
+                            break;
+                        }
+                        case JSON_Type::OBJECT: {
+                            assert(!key.empty());
+                            stack.top()->object()[key] = JSON_Value(JSON_Object{});
+                            JSON_Value& value = stack.top()->object()[key];
+                            stack.push(&value);
+                            break;
+                        }
+                        default:
+                            *stack.top() = JSON_Object{};
+                    };
+                    continue;
+                }
+                case '[': {        
+                    switch (stack.top()->type())
+                    {
+                        case JSON_Type::ARRAY: {
+                            JSON_Value& value = stack.top()->array().emplace_back(JSON_Array{});
+                            stack.push(&value);
+                            break;
+                        }
+                        case JSON_Type::OBJECT: {
+                            assert(!key.empty());
+                            stack.top()->object()[key] = JSON_Value(JSON_Array{});
+                            JSON_Value& value = stack.top()->object()[key];
+                            stack.push(&value);
+                            break;
+                        }
+                        default:
+                            *stack.top() = JSON_Array{};
+                    };
+                    continue;
+                }
+                case ':': {
+                    assert(token_type == JSON_Type::STRING);
+                    key = token_buff.str();
+                    // std::cout << "key: " << key << '\t' << (int)token_type << std::endl;
+                }
+                case '}':
+                case ']':
+                case ',': {
+                    if (token_size > 0)
+                    {
+                        std::string token = token_buff.str();
+                        if (token == "true" || token == "false")
+                        {
+                            token_type = JSON_Type::BOOLEAN;
+                        }
+                        
+                        // std::cout << "token: " << token << '\t' << token_size << '\t' << (int)token_type << std::endl;
+                        
+                        JSON_Value value;
+                        switch (token_type)
+                        {
+                            case JSON_Type::BOOLEAN:
+                                value = token == "true";
+                                break;
+                            case JSON_Type::NUMBER:
+                                value = std::stod(token);
+                                break;
+                            case JSON_Type::STRING:
+                                value = token;
+                                break;
+                            default:
+                                 value = std::monostate{};
+                        };
+
+                        switch (stack.top()->type())
+                        {
+                            case JSON_Type::ARRAY:
+                                stack.top()->array().push_back(value);
+                                break;
+                            case JSON_Type::OBJECT:
+                                assert(!key.empty());
+                                stack.top()->object()[key] = value;
+                                break;
+                            default:
+                                break;
+                        };
+                        
+                        token_buff = std::stringstream{};
+                        token_size = 0;
+                        token_type = JSON_Type::NIL;
+                    }
+                    else // '}' or ']' case
+                    {
+                        stack.pop();
+                    }
+                    continue;
+                }
+                case '"': {
+                    token_type = JSON_Type::STRING;
+                    continue;
+                }
+            }
+            token_buff << c;
+            token_size++;
+            
+            if (std::isdigit(c) && token_type != JSON_Type::STRING)
+            {
+                token_type = JSON_Type::NUMBER;
+            }
+            
+            if (!std::isdigit(c) && token_type == JSON_Type::NUMBER)
+            {
+                token_type = JSON_Type::NIL;
+            }
+            // std::cout << c << std::endl;
+        }
+        
+        return root;
+    }
+    
+    static JSON_Value parse(const std::string& str)
+    {
+        return parse(std::istringstream(str));
+    }
+    
+    static JSON_Value parse(const char *cstr)
+    {
+        return parse(std::string(cstr));
     }
 };
  
@@ -228,10 +388,12 @@ int main()
 
     JSON_Value json = data;
 
-    std::cout << "size: " << json.size() << std::endl;
     std::cout << json.to_string() << std::endl;
     std::cout << json["nested"]["name"].string() << std::endl;
-    std::cout << json["arr"][0].number() << std::endl;
+    std::cout << json["arr"][1].string() << std::endl;
+    
+    JSON_Value parsed = JSON_Value::parse("[134234,\"sdfsdf\",true,false,null,[1,true,{\"id\":\"XY23\",\"arr\":[2,3]}]]");
+    std::cout << "parsed: " << parsed.to_string() << std::endl;
 
     return 0;
 }
