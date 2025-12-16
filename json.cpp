@@ -17,10 +17,16 @@ enum class JSON_Type
     STRING  = 2,
     ARRAY   = 3,
     OBJECT  = 4,
-    NIL     = 5,    // Unfortunately NULL is already defined in C++
+    NIL     = 5, // Unfortunately NULL is already defined in C++
 };
 
 struct JSON_Value;
+struct JSON_Parser
+{
+    static JSON_Value parse(std::istringstream&& isstream);
+    static JSON_Value parse(const std::string& str);
+    static JSON_Value parse(const char *c_str);
+};
 
 using JSON_Object  = std::map<std::string, JSON_Value>;
 using JSON_Array   = std::vector<JSON_Value>;
@@ -225,158 +231,174 @@ struct JSON_Value
         };
     }
     
-    static JSON_Value parse(std::istringstream isstream)
+    static JSON_Value parse(std::istringstream& isstream)
     {
-        JSON_Value root;
-        std::stack<JSON_Value*> stack;
-        stack.push(&root);
-        
-        std::string key;
-        JSON_Type token_type = JSON_Type::NIL;
-        size_t token_size = 0;
-        std::stringstream token_buff;
-
-        char c;
-        while (isstream.read(&c, 1))
-        {
-            switch (c)
-            {
-                case '{': {
-                    switch (stack.top()->type())
-                    {
-                        case JSON_Type::ARRAY: {
-                            JSON_Value& value = stack.top()->array().emplace_back(JSON_Object{});
-                            stack.push(&value);
-                            break;
-                        }
-                        case JSON_Type::OBJECT: {
-                            assert(!key.empty());
-                            stack.top()->object()[key] = JSON_Value(JSON_Object{});
-                            JSON_Value& value = stack.top()->object()[key];
-                            stack.push(&value);
-                            break;
-                        }
-                        default:
-                            *stack.top() = JSON_Object{};
-                    };
-                    continue;
-                }
-                case '[': {        
-                    switch (stack.top()->type())
-                    {
-                        case JSON_Type::ARRAY: {
-                            JSON_Value& value = stack.top()->array().emplace_back(JSON_Array{});
-                            stack.push(&value);
-                            break;
-                        }
-                        case JSON_Type::OBJECT: {
-                            assert(!key.empty());
-                            stack.top()->object()[key] = JSON_Value(JSON_Array{});
-                            JSON_Value& value = stack.top()->object()[key];
-                            stack.push(&value);
-                            break;
-                        }
-                        default:
-                            *stack.top() = JSON_Array{};
-                    };
-                    continue;
-                }
-                case ':': {
-                    assert(token_type == JSON_Type::STRING);
-                    assert(token_size > 0);
-
-                    key = token_buff.str();
-                    // std::cout << "key: " << key << '\t' << (int)token_type << std::endl;
-                    token_buff = std::stringstream{};
-                    token_size = 0;
-                    token_type = JSON_Type::NIL;
-                    continue;
-                }
-                case '}':
-                case ']':
-                case ',': {
-                    if (token_size > 0)
-                    {
-                        std::string token = token_buff.str();
-                        if (token == "true" || token == "false")
-                        {
-                            token_type = JSON_Type::BOOLEAN;
-                        }
-                        
-                        // std::cout << "token: " << token << '\t' << token_size << '\t' << (int)token_type << std::endl;
-                        
-                        JSON_Value value;
-                        switch (token_type)
-                        {
-                            case JSON_Type::BOOLEAN:
-                                value = token == "true";
-                                break;
-                            case JSON_Type::NUMBER:
-                                value = std::stod(token);
-                                break;
-                            case JSON_Type::STRING:
-                                value = token;
-                                break;
-                            default:
-                                value = std::monostate{};
-                        };
-
-                        switch (stack.top()->type())
-                        {
-                            case JSON_Type::ARRAY:
-                                stack.top()->array().push_back(value);
-                                break;
-                            case JSON_Type::OBJECT:
-                                assert(!key.empty());
-                                stack.top()->object()[key] = value;
-                                break;
-                            default:
-                                break;
-                        };
-                        
-                        token_buff = std::stringstream{};
-                        token_size = 0;
-                        token_type = JSON_Type::NIL;
-                    }
-                    else // '}' or ']' case
-                    {
-                        stack.pop();
-                    }
-                    continue;
-                }
-                case '"': {
-                    token_type = JSON_Type::STRING;
-                    continue;
-                }
-            }
-            token_buff << c;
-            token_size++;
-            
-            if (std::isdigit(c) && token_type != JSON_Type::STRING)
-            {
-                token_type = JSON_Type::NUMBER;
-            }
-            
-            if (!std::isdigit(c) && token_type == JSON_Type::NUMBER)
-            {
-                token_type = JSON_Type::NIL;
-            }
-            // std::cout << c << std::endl;
-        }
-        
-        return root;
+        return JSON_Parser::parse(std::move(isstream));
     }
     
     static JSON_Value parse(const std::string& str)
     {
-        return parse(std::istringstream(str));
+        return JSON_Parser::parse(std::istringstream(str));
     }
     
-    static JSON_Value parse(const char *cstr)
+    static JSON_Value parse(const char *c_str)
     {
-        return parse(std::string(cstr));
+        return JSON_Parser::parse(std::string(c_str));
     }
 };
+
+JSON_Value JSON_Parser::parse(std::istringstream&& isstream)
+{
+    JSON_Value root;
+    std::stack<JSON_Value*> stack;
+    stack.push(&root);
+        
+    std::string key;
+    JSON_Type token_type = JSON_Type::NIL;
+    size_t token_size = 0;
+    std::stringstream token_buff;
+
+    char c;
+    while (isstream.read(&c, 1))
+    {
+        switch (c)
+        {
+            case '{': {
+                switch (stack.top()->type())
+                {
+                    case JSON_Type::ARRAY: {
+                        JSON_Value& value = stack.top()->array().emplace_back(JSON_Object{});
+                        stack.push(&value);
+                        break;
+                    }
+                    case JSON_Type::OBJECT: {
+                        assert(!key.empty());
+                        stack.top()->object()[key] = JSON_Value(JSON_Object{});
+                        JSON_Value& value = stack.top()->object()[key];
+                        stack.push(&value);
+                        break;
+                    }
+                    default:
+                        *stack.top() = JSON_Object{};
+                };
+                continue;
+            }
+            case '[': {        
+                switch (stack.top()->type())
+                {
+                    case JSON_Type::ARRAY: {
+                        JSON_Value& value = stack.top()->array().emplace_back(JSON_Array{});
+                        stack.push(&value);
+                        break;
+                    }
+                    case JSON_Type::OBJECT: {
+                        assert(!key.empty());
+                        stack.top()->object()[key] = JSON_Value(JSON_Array{});
+                        JSON_Value& value = stack.top()->object()[key];
+                        stack.push(&value);
+                        break;
+                    }
+                    default:
+                        *stack.top() = JSON_Array{};
+                };
+                continue;
+            }
+            case ':': {
+                assert(token_type == JSON_Type::STRING);
+                assert(token_size > 0);
+
+                key = token_buff.str();
+                // std::cout << "key: " << key << '\t' << (int)token_type << std::endl;
+                token_buff = std::stringstream{};
+                token_size = 0;
+                token_type = JSON_Type::NIL;
+                continue;
+            }
+            case '}':
+            case ']':
+            case ',': {
+                if (token_size > 0)
+                {
+                    std::string token = token_buff.str();
+                    if (token == "true" || token == "false")
+                    {
+                        token_type = JSON_Type::BOOLEAN;
+                    }
+                        
+                    // std::cout << "token: " << token << '\t' << token_size << '\t' << (int)token_type << std::endl;
+                        
+                    JSON_Value value;
+                    switch (token_type)
+                    {
+                        case JSON_Type::BOOLEAN:
+                            value = token == "true";
+                            break;
+                        case JSON_Type::NUMBER:
+                            value = std::stod(token);
+                            break;
+                        case JSON_Type::STRING:
+                            value = token;
+                            break;
+                        default:
+                            value = std::monostate{};
+                    };
+
+                    switch (stack.top()->type())
+                    {
+                        case JSON_Type::ARRAY:
+                            stack.top()->array().push_back(value);
+                            break;
+                        case JSON_Type::OBJECT:
+                            assert(!key.empty());
+                            stack.top()->object()[key] = value;
+                            break;
+                        default:
+                            break;
+                    };
+                    
+                    token_buff = std::stringstream{};
+                    token_size = 0;
+                    token_type = JSON_Type::NIL;
+                }
+                else // '}' or ']' case
+                {
+                    stack.pop();
+                }
+                continue;
+            }
+            case '"': {
+                token_type = JSON_Type::STRING;
+                continue;
+            }
+        }
+
+        token_buff << c;
+        token_size++;
+        
+        if (std::isdigit(c) && token_type != JSON_Type::STRING)
+        {
+            token_type = JSON_Type::NUMBER;
+        }
+        
+        if (!std::isdigit(c) && token_type == JSON_Type::NUMBER)
+        {
+            token_type = JSON_Type::NIL;
+        }
+        // std::cout << c << std::endl;
+    }
+        
+    return root;
+}
+    
+JSON_Value JSON_Parser::parse(const std::string& str)
+{
+    return JSON_Parser::parse(std::istringstream(str));
+}
+    
+JSON_Value JSON_Parser::parse(const char *c_str)
+{
+    return JSON_Parser::parse(std::string(c_str));
+}
  
 int main()
 {
@@ -398,8 +420,11 @@ int main()
     std::cout << json["nested"]["name"].string() << std::endl;
     std::cout << json["arr"][1].string() << std::endl;
     
-    JSON_Value parsed = JSON_Value::parse("[134234,\"sdfsdf\",true,false,null,[1,true,{\"id\":\"XY23\",\"arr\":[2,3],\"obj\":{\"key\":1}}]]");
-    std::cout << "parsed: " << parsed.to_string() << std::endl;
+    const char *input = "[134234,\"sdfsdf\",true,false,null,[1,true,{\"arr\":[2,3],\"id\":\"XY23\",\"obj\":{\"key\":1}}]]";
+    JSON_Value parsed = JSON_Value::parse(input);
+    bool assert_parsed = strcmp(input, parsed.to_string().c_str()) == 0;
+    std::cout << "assert parsed: " << (assert_parsed ? "true" : "false") << std::endl;
+    std::cout << "parsed output: " << parsed.to_string() << std::endl;
 
     return 0;
 }
